@@ -1,0 +1,50 @@
+seed: 0
+goal: complete the household activity
+episodes: 1
+max_steps: 100
+tier_refresh_interval: 10
+
+environment:
+  name: virtualhome_unity
+  root: ${VIRTUALHOME_ROOT}
+  executable: ${VIRTUALHOME_SIMULATOR}
+  environment_id: 0
+  port: "8080"
+  no_graphics: false
+  task_manifest: examples/data/virtualhome_task.json
+
+planner:
+  provider: openai_compatible
+  model: ${ADAPTIVEGUARD_LLM_MODEL}
+  base_url: ${ADAPTIVEGUARD_LLM_BASE_URL}
+  api_key: ${ADAPTIVEGUARD_LLM_API_KEY}
+  temperature: 0.0
+
+judges:
+  provider: openai_compatible
+  prj_votes: 3
+  hca_hint_votes: 3
+  hca_structured_votes: 3
+
+scb:
+  theta_low: 0.20
+  theta_high: 0.70
+
+pft:
+  tau: 0.25
+  epsilon0: 0.10
+  budget_base: 5
+  budget_max: 10
+  budget_refund: 0.5
+
+cca:
+  theta_minus: -0.20
+  theta_plus: 0.20
+  eta: 0.5
+  score_range: 1
+
+rules:
+  path: outputs/rules/virtualhome.json
+
+output:
+  directory: outputs

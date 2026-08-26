@@ -1,0 +1,48 @@
+seed: 0
+goal: complete the current task
+episodes: 1
+max_steps: 20
+tier_refresh_interval: 10
+
+environment:
+  name: mock
+  required_actions: [inspect, finish]
+
+planner:
+  provider: mock
+
+judges:
+  provider: mock
+  prj_votes: 3
+  hca_hint_votes: 3
+  hca_structured_votes: 3
+
+scb:
+  theta_low: 0.20
+  theta_high: 0.70
+  oscillation_window: 10
+
+pft:
+  tau: 0.25
+  epsilon0: 0.10
+  budget_base: 5
+  budget_max: 10
+  budget_refund: 0.5
+
+cca:
+  theta_minus: -0.20
+  theta_plus: 0.20
+  eta: 0.5
+  score_range: 100
+  sps_window: 8
+  gamma: 0.90
+  default_weights: [0.35, 0.25, 0.40]
+  environment_weights: [0.55, 0.20, 0.25]
+  silent_reward_weights: [0.35, 0.10, 0.55]
+  invalid_hca_weights: [0.583, 0.417, 0.0]
+
+rules:
+  path: null
+
+output:
+  directory: outputs

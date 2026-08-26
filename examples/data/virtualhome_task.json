@@ -1,0 +1,26 @@
+{
+  "goal": "switch on the lamp",
+  "char_index": 0,
+  "name_equivalence": {},
+  "candidate_actions": [
+    "[SWITCHON] <lamp> (3)"
+  ],
+  "goal_conditions": {
+    "node_states": [
+      {"id": 3, "state": "ON"}
+    ]
+  },
+  "initial_graph": {
+    "nodes": [
+      {"id": 1, "class_name": "character", "properties": ["PERSON"], "states": [], "category": "Characters", "prefab_name": null, "bounding_box": null},
+      {"id": 2, "class_name": "kitchen", "properties": [], "states": [], "category": "Rooms", "prefab_name": null, "bounding_box": null},
+      {"id": 3, "class_name": "lamp", "properties": ["HAS_SWITCH"], "states": ["OFF"], "category": "Appliances", "prefab_name": null, "bounding_box": null}
+    ],
+    "edges": [
+      {"from_id": 1, "relation_type": "INSIDE", "to_id": 2},
+      {"from_id": 3, "relation_type": "INSIDE", "to_id": 2},
+      {"from_id": 1, "relation_type": "CLOSE", "to_id": 3},
+      {"from_id": 3, "relation_type": "CLOSE", "to_id": 1}
+    ]
+  }
+}

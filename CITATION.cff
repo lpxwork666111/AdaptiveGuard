@@ -1,0 +1,7 @@
+cff-version: 1.2.0
+title: "AdaptiveGuard"
+type: software
+authors:
+  - name: "AdaptiveGuard authors"
+abstract: "Adaptive constraint beliefs and guarded planning for interactive agents."
+license: MIT

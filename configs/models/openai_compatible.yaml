@@ -1,0 +1,8 @@
+provider: openai_compatible
+model: ${ADAPTIVEGUARD_LLM_MODEL}
+base_url: ${ADAPTIVEGUARD_LLM_BASE_URL}
+api_key: ${ADAPTIVEGUARD_LLM_API_KEY}
+temperature: 0.0
+timeout: 60
+max_retries: 3
+max_tokens: 512

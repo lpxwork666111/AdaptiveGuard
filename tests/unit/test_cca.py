@@ -1,0 +1,45 @@
+import pytest
+
+from adaptiveguard.bootstrap.hypotheses import typed_rule_factory
+from adaptiveguard.core.rules import ConstraintRule, RuleBeliefGraph
+from adaptiveguard.core.types import EvidenceVector, HcaLabel, Judgment
+from adaptiveguard.modules.cca import ContrastiveCausalAttribution
+
+
+def test_default_fusion() -> None:
+    cca = ContrastiveCausalAttribution()
+    q = cca.fuse(EvidenceVector(1.0, 0.0, -0.5))
+    assert q == pytest.approx(0.15)
+    assert cca.judgment(q) == Judgment.UNCERTAIN
+
+
+def test_invalid_hca_is_removed_from_fusion() -> None:
+    cca = ContrastiveCausalAttribution()
+    q = cca.fuse(EvidenceVector(1.0, -1.0, -1.0), hca_valid=False)
+    assert q == pytest.approx(0.166, abs=0.002)
+
+
+def test_good_trial_refutes_rule() -> None:
+    rule = ConstraintRule("a", "r", "b", alpha=3, beta=1)
+    graph = RuleBeliefGraph([rule])
+    cca = ContrastiveCausalAttribution()
+    cca.update_rules(
+        graph, action="a", judgment=Judgment.GOOD, q_value=1, trial_rule_id=rule.rule_id
+    )
+    assert rule.beta == 2
+
+
+def test_bad_unmatched_action_creates_typed_hypothesis() -> None:
+    graph = RuleBeliefGraph()
+    cca = ContrastiveCausalAttribution()
+    updates = cca.update_rules(
+        graph,
+        action="open fridge",
+        judgment=Judgment.BAD,
+        q_value=-1,
+        hypothesis_factory=typed_rule_factory,
+        hca_label=HcaLabel.MISSING_PRECOND,
+        evidence={},
+    )
+    assert len(graph) == 1
+    assert updates[0]["created"] is True
