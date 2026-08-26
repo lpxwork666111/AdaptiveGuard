@@ -54,6 +54,63 @@ def test_multiple_preconditions_are_not_treated_as_contradictions() -> None:
     assert graph.consistency_check() == []
 
 
+def test_explicitly_linked_rules_are_contradictory() -> None:
+    left = ConstraintRule(
+        "heater",
+        "mode",
+        "warm",
+        rule_id="rule-a",
+        metadata={"contradicts": ["rule-b"]},
+    )
+    right = ConstraintRule("heater", "mode", "cool", rule_id="rule-b")
+    graph = RuleBeliefGraph([left, right])
+
+    assert graph.consistency_check() == [("rule-a", "rule-b")]
+
+
+def test_negated_tails_are_contradictory() -> None:
+    positive = ConstraintRule("heater", "state", "active", rule_id="rule-a")
+    negative = ConstraintRule("heater", "state", "not active", rule_id="rule-b")
+    graph = RuleBeliefGraph([positive, negative])
+
+    assert graph.consistency_check() == [("rule-a", "rule-b")]
+
+
+def test_exclusive_alternatives_are_contradictory() -> None:
+    left = ConstraintRule("heater", "mode", "warm", rule_id="rule-a", metadata={"exclusive": True})
+    right = ConstraintRule("heater", "mode", "cool", rule_id="rule-b")
+    graph = RuleBeliefGraph([left, right])
+
+    assert graph.consistency_check() == [("rule-a", "rule-b")]
+
+
+def test_contradiction_resolution_uses_deterministic_tie_break() -> None:
+    left = ConstraintRule(
+        "heater",
+        "mode",
+        "warm",
+        alpha=3,
+        beta=1,
+        tier=RuleTier.CONFIRMED,
+        rule_id="rule-a",
+        metadata={"exclusive": True},
+    )
+    right = ConstraintRule(
+        "heater",
+        "mode",
+        "cool",
+        alpha=3,
+        beta=1,
+        tier=RuleTier.CONFIRMED,
+        rule_id="rule-b",
+    )
+    graph = RuleBeliefGraph([right, left])
+
+    assert graph.resolve_contradictions() == [("rule-a", "rule-b")]
+    assert left.tier == RuleTier.CONFIRMED
+    assert right.tier == RuleTier.TENTATIVE
+
+
 def test_behavioral_cycle_deprecates_lowest_confidence_rule() -> None:
     strong = ConstraintRule("a", "requires", "b", alpha=4, beta=1)
     weak = ConstraintRule("b", "requires", "a", alpha=1, beta=1)
@@ -61,3 +118,25 @@ def test_behavioral_cycle_deprecates_lowest_confidence_rule() -> None:
     assert graph.behavioral_cycles()
     graph.enforce_acyclicity()
     assert weak.tier == RuleTier.DEPRECATED
+    assert weak.metadata["deprecated_reason"] == "behavioral_cycle"
+
+
+def test_multi_node_behavioral_cycle_has_stable_rule_order() -> None:
+    rules = [
+        ConstraintRule("a", "requires", "b", rule_id="rule-c"),
+        ConstraintRule("b", "requires", "c", rule_id="rule-a"),
+        ConstraintRule("c", "requires", "a", rule_id="rule-b"),
+    ]
+    graph = RuleBeliefGraph(rules)
+
+    assert graph.behavioral_cycles() == [("rule-a", "rule-b", "rule-c")]
+
+
+def test_cycle_resolution_uses_deterministic_tie_break() -> None:
+    left = ConstraintRule("a", "requires", "b", rule_id="rule-a")
+    right = ConstraintRule("b", "requires", "a", rule_id="rule-b")
+    graph = RuleBeliefGraph([right, left])
+
+    assert graph.enforce_acyclicity() == [("rule-a", "rule-b")]
+    assert left.tier == RuleTier.DEPRECATED
+    assert right.tier == RuleTier.TENTATIVE

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from ._rule_consistency import find_behavioral_cycles, find_contradictions
 from .types import RuleTier
 
 
@@ -196,70 +197,11 @@ class RuleBeliefGraph:
 
     def consistency_check(self) -> list[tuple[str, str]]:
         """Return contradictory symbolic rules; callers may resolve by confidence."""
-        contradictions: list[tuple[str, str]] = []
-        grouped: dict[tuple[str, str], list[ConstraintRule]] = {}
-        for rule in self:
-            grouped.setdefault((rule.head.lower(), rule.relation.lower()), []).append(rule)
-        for rules in grouped.values():
-            for left in rules:
-                for right in rules:
-                    if left.rule_id >= right.rule_id:
-                        continue
-                    explicit = right.rule_id in left.metadata.get(
-                        "contradicts", []
-                    ) or left.rule_id in right.metadata.get("contradicts", [])
-                    left_tail = left.tail.strip().lower()
-                    right_tail = right.tail.strip().lower()
-                    left_negated = left_tail.startswith("not ")
-                    right_negated = right_tail.startswith("not ")
-                    negated = left_negated != right_negated and (
-                        left_tail.removeprefix("not ") == right_tail.removeprefix("not ")
-                    )
-                    exclusive = (
-                        bool(left.metadata.get("exclusive") or right.metadata.get("exclusive"))
-                        and left_tail != right_tail
-                    )
-                    if (
-                        left.tier != RuleTier.DEPRECATED
-                        and right.tier != RuleTier.DEPRECATED
-                        and (explicit or negated or exclusive)
-                    ):
-                        contradictions.append((left.rule_id, right.rule_id))
-        return contradictions
+        return find_contradictions(self)
 
     def behavioral_cycles(self) -> list[tuple[str, ...]]:
         """Find cycles among active behavioral-precondition edges."""
-
-        adjacency: dict[str, list[tuple[str, str]]] = {}
-        for rule in self:
-            if rule.tier == RuleTier.DEPRECATED or "require" not in rule.relation.lower():
-                continue
-            adjacency.setdefault(rule.head.lower(), []).append((rule.tail.lower(), rule.rule_id))
-        visiting: set[str] = set()
-        visited: set[str] = set()
-        stack_nodes: list[str] = []
-        stack_rules: list[str] = []
-        found: set[tuple[str, ...]] = set()
-
-        def visit(node: str) -> None:
-            visiting.add(node)
-            stack_nodes.append(node)
-            for target, rule_id in adjacency.get(node, []):
-                if target in visiting:
-                    index = stack_nodes.index(target)
-                    found.add(tuple(sorted([*stack_rules[index:], rule_id])))
-                elif target not in visited:
-                    stack_rules.append(rule_id)
-                    visit(target)
-                    stack_rules.pop()
-            stack_nodes.pop()
-            visiting.remove(node)
-            visited.add(node)
-
-        for node in list(adjacency):
-            if node not in visited:
-                visit(node)
-        return sorted(found)
+        return find_behavioral_cycles(self)
 
     def enforce_acyclicity(self) -> list[tuple[str, ...]]:
         cycles = self.behavioral_cycles()
