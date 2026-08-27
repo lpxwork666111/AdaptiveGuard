@@ -55,14 +55,7 @@ class ContrastiveCausalAttribution:
     def fuse(
         self, evidence: EvidenceVector, *, mode: str = "default", hca_valid: bool = True
     ) -> float:
-        if not hca_valid:
-            weights = self.config.invalid_hca_weights
-        elif mode == "environment_error":
-            weights = self.config.environment_weights
-        elif mode == "silent_reward":
-            weights = self.config.silent_reward_weights
-        else:
-            weights = self.config.default_weights
+        weights = self._weights_for(mode, hca_valid)
         total = sum(weights)
         if total <= 0:
             raise ValueError("CCA weights must have a positive sum")
@@ -95,45 +88,90 @@ class ContrastiveCausalAttribution:
         hca_label: HcaLabel | None = None,
         evidence: Any = None,
     ) -> list[dict[str, Any]]:
-        updates: list[dict[str, Any]] = []
         if trial_rule_id is not None:
-            rule = graph.get(trial_rule_id)
-            if rule is not None:
-                if judgment == Judgment.GOOD:
-                    rule.update(refute=1.0)
-                    updates.append({"rule_id": rule.rule_id, "refute": 1.0})
-                elif judgment == Judgment.BAD:
-                    rule.update(support=1.0)
-                    updates.append({"rule_id": rule.rule_id, "support": 1.0})
-        elif tentative_rules:
-            for rule in tentative_rules:
-                _, target = self.hca_effect(hca_label)
-                rule_target = rule.metadata.get("graph_type")
-                if target is not None and rule_target is not None and target != rule_target:
-                    continue
-                if judgment == Judgment.GOOD:
-                    rule.update(refute=1.0)
-                    updates.append({"rule_id": rule.rule_id, "refute": 1.0})
-                elif judgment == Judgment.BAD:
-                    rule.update(support=1.0)
-                    updates.append({"rule_id": rule.rule_id, "support": 1.0})
-                elif q_value > 0:
-                    rule.update(refute=self.config.eta)
-                    updates.append({"rule_id": rule.rule_id, "refute": self.config.eta})
-                elif q_value < 0:
-                    rule.update(support=self.config.eta)
-                    updates.append({"rule_id": rule.rule_id, "support": self.config.eta})
-        elif judgment == Judgment.BAD and hypothesis_factory is not None:
-            candidate = hypothesis_factory(action, hca_label, evidence)
-            if candidate is not None:
-                existing = graph.get_by_symbolic_key(candidate.symbolic_key)
-                if existing is not None:
-                    existing.update(support=1.0)
-                    updates.append({"rule_id": existing.rule_id, "support": 1.0})
-                else:
-                    graph.add(candidate, merge=False)
-                    updates.append({"rule_id": candidate.rule_id, "created": True})
+            return self._update_trial_rule(graph, trial_rule_id, judgment)
+        if tentative_rules:
+            return self._update_tentative_rules(tentative_rules, hca_label, judgment, q_value)
+        if judgment == Judgment.BAD and hypothesis_factory is not None:
+            return self._update_hypothesis(graph, action, hca_label, evidence, hypothesis_factory)
+        return []
+
+    def _weights_for(self, mode: str, hca_valid: bool) -> tuple[float, float, float]:
+        if not hca_valid:
+            return self.config.invalid_hca_weights
+        if mode == "environment_error":
+            return self.config.environment_weights
+        if mode == "silent_reward":
+            return self.config.silent_reward_weights
+        return self.config.default_weights
+
+    @staticmethod
+    def _update_trial_rule(
+        graph: RuleBeliefGraph, rule_id: str, judgment: Judgment
+    ) -> list[dict[str, Any]]:
+        rule = graph.get(rule_id)
+        if rule is None:
+            return []
+        if judgment == Judgment.GOOD:
+            rule.update(refute=1.0)
+            return [{"rule_id": rule.rule_id, "refute": 1.0}]
+        if judgment == Judgment.BAD:
+            rule.update(support=1.0)
+            return [{"rule_id": rule.rule_id, "support": 1.0}]
+        return []
+
+    def _update_tentative_rules(
+        self,
+        rules: list[ConstraintRule],
+        hca_label: HcaLabel | None,
+        judgment: Judgment,
+        q_value: float,
+    ) -> list[dict[str, Any]]:
+        updates: list[dict[str, Any]] = []
+        _, target = self.hca_effect(hca_label)
+        for rule in rules:
+            rule_target = rule.metadata.get("graph_type")
+            if target is not None and rule_target is not None and target != rule_target:
+                continue
+            update = self._tentative_update(rule, judgment, q_value)
+            if update is not None:
+                updates.append(update)
         return updates
+
+    def _tentative_update(
+        self, rule: ConstraintRule, judgment: Judgment, q_value: float
+    ) -> dict[str, Any] | None:
+        if judgment == Judgment.GOOD:
+            rule.update(refute=1.0)
+            return {"rule_id": rule.rule_id, "refute": 1.0}
+        if judgment == Judgment.BAD:
+            rule.update(support=1.0)
+            return {"rule_id": rule.rule_id, "support": 1.0}
+        if q_value > 0:
+            rule.update(refute=self.config.eta)
+            return {"rule_id": rule.rule_id, "refute": self.config.eta}
+        if q_value < 0:
+            rule.update(support=self.config.eta)
+            return {"rule_id": rule.rule_id, "support": self.config.eta}
+        return None
+
+    @staticmethod
+    def _update_hypothesis(
+        graph: RuleBeliefGraph,
+        action: str,
+        hca_label: HcaLabel | None,
+        evidence: Any,
+        hypothesis_factory: Callable[[str, HcaLabel | None, Any], ConstraintRule | None],
+    ) -> list[dict[str, Any]]:
+        candidate = hypothesis_factory(action, hca_label, evidence)
+        if candidate is None:
+            return []
+        existing = graph.get_by_symbolic_key(candidate.symbolic_key)
+        if existing is not None:
+            existing.update(support=1.0)
+            return [{"rule_id": existing.rule_id, "support": 1.0}]
+        graph.add(candidate, merge=False)
+        return [{"rule_id": candidate.rule_id, "created": True}]
 
     @staticmethod
     def hca_effect(label: HcaLabel | None) -> tuple[float, str | None]:
