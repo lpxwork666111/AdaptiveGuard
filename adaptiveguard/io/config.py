@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import os
-import re
-from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+from ._config_loader import expand_environment, load_yaml_mapping
 
 
 class ScbSettings(BaseModel):
@@ -81,18 +78,9 @@ class RunSettings(BaseModel):
 
 
 def _expand(value: Any) -> Any:
-    if isinstance(value, str):
-        return _ENV_PATTERN.sub(lambda match: os.getenv(match.group(1), match.group(0)), value)
-    if isinstance(value, dict):
-        return {key: _expand(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_expand(item) for item in value]
-    return value
+    return expand_environment(value)
 
 
 def load_config(path: str | os.PathLike[str]) -> dict[str, Any]:
-    with Path(path).open(encoding="utf-8") as handle:
-        data = yaml.safe_load(handle) or {}
-    if not isinstance(data, dict):
-        raise ValueError("configuration root must be a mapping")
+    data = load_yaml_mapping(path)
     return RunSettings.model_validate(_expand(data)).model_dump(mode="python")
