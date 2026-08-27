@@ -9,6 +9,26 @@ from typing import Any
 from ..io.serialization import append_jsonl
 
 
+def _episode_id(index: int) -> str:
+    return f"episode-{index}"
+
+
+def _execute_episode(
+    controller_factory: Callable[[], Any],
+    goal: str,
+    index: int,
+    output_path: str | Path | None,
+) -> dict[str, Any]:
+    controller = controller_factory()
+    try:
+        record = controller.run_episode(goal, episode_id=_episode_id(index))
+        if output_path is not None:
+            append_jsonl(output_path, record)
+        return record
+    finally:
+        controller.environment.close()
+
+
 def run_episodes(
     controller_factory: Callable[[], Any],
     goal: str,
@@ -17,12 +37,5 @@ def run_episodes(
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for index in range(episodes):
-        controller = controller_factory()
-        try:
-            record = controller.run_episode(goal, episode_id=f"episode-{index}")
-            records.append(record)
-            if output_path is not None:
-                append_jsonl(output_path, record)
-        finally:
-            controller.environment.close()
+        records.append(_execute_episode(controller_factory, goal, index, output_path))
     return records
