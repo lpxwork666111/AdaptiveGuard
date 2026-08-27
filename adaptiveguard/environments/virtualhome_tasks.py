@@ -47,6 +47,33 @@ def _load_json_value(value: Any, base: Path) -> Any:
     return value
 
 
+def _node_matches_condition(node: dict[str, Any], condition: dict[str, Any]) -> bool:
+    return ("id" not in condition or node.get("id") == condition["id"]) and (
+        "class_name" not in condition or node.get("class_name") == condition["class_name"]
+    )
+
+
+def _node_state_matches(node: dict[str, Any], condition: dict[str, Any]) -> bool:
+    return str(condition["state"]).upper() in {
+        str(value).upper() for value in node.get("states", [])
+    }
+
+
+def _satisfies_node_states(nodes: list[dict[str, Any]], conditions: list[dict[str, Any]]) -> bool:
+    for condition in conditions:
+        matching = [node for node in nodes if _node_matches_condition(node, condition)]
+        if not matching or not any(_node_state_matches(node, condition) for node in matching):
+            return False
+    return True
+
+
+def _satisfies_edges(edges: list[dict[str, Any]], conditions: list[dict[str, Any]]) -> bool:
+    return all(
+        any(all(edge.get(key) == value for key, value in condition.items()) for edge in edges)
+        for condition in conditions
+    )
+
+
 def load_virtualhome_manifest(
     path: str | os.PathLike[str], root: str | None = None
 ) -> dict[str, Any]:
@@ -71,27 +98,8 @@ def make_goal_predicate(spec: dict[str, Any] | None) -> Callable[[Any], bool]:
         graph = state.to_dict() if hasattr(state, "to_dict") else state
         nodes = graph.get("nodes", [])
         edges = graph.get("edges", [])
-        for condition in spec.get("node_states", []):
-            matching = [
-                node
-                for node in nodes
-                if ("id" not in condition or node.get("id") == condition["id"])
-                and (
-                    "class_name" not in condition
-                    or node.get("class_name") == condition["class_name"]
-                )
-            ]
-            if not matching or not any(
-                str(condition["state"]).upper()
-                in {str(value).upper() for value in node.get("states", [])}
-                for node in matching
-            ):
-                return False
-        for required in spec.get("edges", []):
-            if not any(
-                all(edge.get(key) == value for key, value in required.items()) for edge in edges
-            ):
-                return False
-        return bool(spec) and True
+        node_states_ok = _satisfies_node_states(nodes, spec.get("node_states", []))
+        edges_ok = _satisfies_edges(edges, spec.get("edges", []))
+        return bool(spec) and node_states_ok and edges_ok
 
     return predicate
