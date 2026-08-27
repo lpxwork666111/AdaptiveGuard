@@ -7,6 +7,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from ._trajectory_stats import (
+    action_frequency,
+    bottleneck,
+    canonical_action,
+    criticality,
+    discounted_mean,
+    normalize_score_delta,
+    path_relevance,
+)
+
 
 @dataclass(frozen=True)
 class StepRecord:
@@ -42,48 +52,22 @@ class TrajectoryBuffer:
                 self._visit_counts[self._template(step.action)] += 1
 
     def observe_score(self, score_delta: float, score_range: float = 100.0) -> float:
-        normalized = max(-1.0, min(1.0, score_delta / max(abs(score_range), 1e-8)))
-        self._score_deltas.append(normalized)
-        weights = [self.gamma**i for i in range(len(self._score_deltas))]
-        value = sum(
-            w * x for w, x in zip(reversed(weights), self._score_deltas, strict=True)
-        ) / max(sum(weights), 1e-8)
-        return max(-1.0, min(1.0, value))
+        self._score_deltas.append(normalize_score_delta(score_delta, score_range))
+        return discounted_mean(self._score_deltas, self.gamma)
 
     def action_frequency(self, action: str) -> float:
-        if not self._successful:
-            return 0.0
-        return min(1.0, self._visit_counts[self._template(action)] / len(self._successful))
+        return action_frequency(self._successful, self._visit_counts, action)
 
     def path_relevance(self, action: str) -> float:
         """Approximate shortest-path relevance using position in successful trajectories."""
-        positions: list[float] = []
-        template = self._template(action)
-        for trajectory in self._successful:
-            for index, step in enumerate(trajectory):
-                if self._template(step.action) == template:
-                    positions.append(1.0 - index / max(len(trajectory), 1))
-        return max(positions, default=0.0)
+        return path_relevance(self._successful, action)
 
     def bottleneck(self, action: str) -> float:
-        if not self._successful:
-            return 0.0
-        template = self._template(action)
-        return (
-            1.0
-            if self._visit_counts[template] >= len(self._successful)
-            else self.action_frequency(action)
-        )
+        return bottleneck(self._successful, self._visit_counts, action)
 
     def criticality(self, action: str, epsilon0: float = 0.1) -> float:
-        if not self._successful:
-            return 0.5
-        return min(
-            1.0,
-            max(self.action_frequency(action), self.path_relevance(action), self.bottleneck(action))
-            + epsilon0,
-        )
+        return criticality(self._successful, self._visit_counts, action, epsilon0)
 
     @staticmethod
     def _template(action: str) -> str:
-        return " ".join(str(action).strip().lower().split())
+        return canonical_action(action)
